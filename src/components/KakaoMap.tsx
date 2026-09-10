@@ -285,7 +285,10 @@ export default function KakaoMap() {
           level: 3,
         })
 
-        const infoWindow = new window.kakao.maps.InfoWindow()
+        // 카카오맵은 오버레이(마커)를 위도 기준으로 z-index를 매겨서, 근처 마커가
+        // 정보창 위로 튀어나와 보이는 경우가 있다. 정보창의 zIndex를 마커보다
+        // 확실히 높게 지정해 항상 위에 그려지도록 한다.
+        const infoWindow = new window.kakao.maps.InfoWindow({ zIndex: 10000 })
 
         const markerImages: Record<Shelter['type'], kakao.maps.MarkerImage> = {
           summer: new window.kakao.maps.MarkerImage(

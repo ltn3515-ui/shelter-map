@@ -46,6 +46,7 @@ declare namespace kakao.maps {
 
   interface InfoWindowOptions {
     content?: string
+    zIndex?: number
   }
 
   class InfoWindow {
