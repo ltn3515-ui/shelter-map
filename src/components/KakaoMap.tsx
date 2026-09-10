@@ -17,6 +17,11 @@ const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY
 // Seoul City Hall
 const SEOUL_CITY_HALL = { lat: 37.5665, lng: 126.978 }
 
+// 실제 데이터는 전국 단위(수만 건)라 전부 마커로 만들면 생성·클러스터링 비용 때문에
+// 스크롤/조작이 버벅인다. 사용자 위치(또는 기본 위치) 기준 가까운 순으로 이 개수만
+// 렌더링한다 — "내 주변 쉼터"라는 목적에는 충분하고, 화면도 매끄럽게 유지된다.
+const MAX_RENDERED_MARKERS = 500
+
 const OPEN_STATUS_LABEL = {
   open: '현재 운영 중',
   closed: '운영 종료',
@@ -221,9 +226,43 @@ export default function KakaoMap() {
 
             console.info(`쉼터 ${shelters.length}건을 불러왔습니다.`)
 
+            const origin = userLocationRef.current ?? SEOUL_CITY_HALL
+            const byDistance = shelters
+              .map((shelter) => ({
+                shelter,
+                distanceMeters: haversineDistanceMeters(
+                  origin.lat,
+                  origin.lng,
+                  shelter.latitude,
+                  shelter.longitude,
+                ),
+              }))
+              .sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+            let nearestShelters = byDistance
+              .slice(0, MAX_RENDERED_MARKERS)
+              .map((entry) => entry.shelter)
+
+            // 공유 링크로 지정된 쉼터는 거리와 무관하게 항상 표시 대상에 포함한다.
+            if (
+              sharedShelterId &&
+              !nearestShelters.some((shelter) => shelter.id === sharedShelterId)
+            ) {
+              const sharedShelter = shelters.find(
+                (shelter) => shelter.id === sharedShelterId,
+              )
+              if (sharedShelter) {
+                nearestShelters = [...nearestShelters, sharedShelter]
+              }
+            }
+
+            console.info(
+              `성능을 위해 가까운 쉼터 ${nearestShelters.length}건만 지도에 표시합니다.`,
+            )
+
             const markers: kakao.maps.Marker[] = []
 
-            for (const shelter of shelters) {
+            for (const shelter of nearestShelters) {
               const marker = new window.kakao.maps.Marker({
                 position: new window.kakao.maps.LatLng(
                   shelter.latitude,
