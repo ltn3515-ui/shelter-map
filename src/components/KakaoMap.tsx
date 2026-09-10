@@ -6,7 +6,7 @@ import {
 } from '../data/crowd-reports'
 import {
   getShelterOpenStatus,
-  getShelters,
+  loadShelters,
   type Shelter,
 } from '../data/shelters'
 import { buildShareUrl, copyToClipboard, getShelterIdFromUrl } from '../lib/share'
@@ -184,8 +184,8 @@ export default function KakaoMap() {
     const userLocationRef = { current: null as { lat: number; lng: number } | null }
     const sharedShelterId = getShelterIdFromUrl()
 
-    loadKakaoMapSdk()
-      .then(() => {
+    Promise.all([loadKakaoMapSdk(), loadShelters()])
+      .then(([, shelters]) => {
         if (cancelled || !containerRef.current) return
 
         const map = new window.kakao.maps.Map(containerRef.current, {
@@ -214,7 +214,7 @@ export default function KakaoMap() {
         const infoWindow = new window.kakao.maps.InfoWindow()
         const markers: kakao.maps.Marker[] = []
 
-        for (const shelter of getShelters()) {
+        for (const shelter of shelters) {
           const marker = new window.kakao.maps.Marker({
             position: new window.kakao.maps.LatLng(
               shelter.latitude,
