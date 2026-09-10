@@ -16,6 +16,8 @@ interface ProxyResponse {
 }
 
 const SUMMER_API_URL = 'https://www.safetydata.go.kr/V2/api/DSSP-IF-10942'
+// Vercel 함수 자체 실행 제한 시간을 넘기지 않도록, 업스트림 응답을 무한정 기다리지 않는다.
+const UPSTREAM_TIMEOUT_MS = 8000
 
 function firstValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value
@@ -40,7 +42,9 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse) {
       numOfRows,
     })
 
-    const upstream = await fetch(`${SUMMER_API_URL}?${params.toString()}`)
+    const upstream = await fetch(`${SUMMER_API_URL}?${params.toString()}`, {
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    })
     const body = await upstream.text()
 
     res.status(upstream.status)

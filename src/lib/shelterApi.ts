@@ -13,6 +13,8 @@ const SUMMER_API_URL = '/api/shelters/summer'
 const PAGE_SIZE = 1000
 // 응답 형식이 예상과 달라 totalCount를 못 읽는 경우를 대비한 무한 루프 방지용 상한.
 const MAX_PAGES = 50
+// 정부 API 응답이 느리거나 멈춰도 무한정 기다리지 않고 CSV 폴백으로 넘어가도록 제한한다.
+const REQUEST_TIMEOUT_MS = 8000
 
 export type ApiRow = Record<string, string | number | undefined>
 
@@ -46,7 +48,19 @@ async function fetchAllRows(proxyUrl: string, apiLabel: string): Promise<ApiRow[
       numOfRows: String(PAGE_SIZE),
     })
 
-    const response = await fetch(`${proxyUrl}?${params.toString()}`)
+    let response: Response
+    try {
+      response = await fetch(`${proxyUrl}?${params.toString()}`, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === 'TimeoutError'
+      throw new Error(
+        timedOut
+          ? `${apiLabel} API 응답이 ${REQUEST_TIMEOUT_MS / 1000}초 내에 오지 않았습니다.`
+          : `${apiLabel} API 요청 중 네트워크 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
     const bodyText = await response.text()
 
     let json: SafetyDataResponse

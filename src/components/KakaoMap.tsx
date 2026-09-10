@@ -184,10 +184,12 @@ export default function KakaoMap() {
     const userLocationRef = { current: null as { lat: number; lng: number } | null }
     const sharedShelterId = getShelterIdFromUrl()
 
-    Promise.all([loadKakaoMapSdk(), loadShelters()])
-      .then(([, shelters]) => {
+    loadKakaoMapSdk()
+      .then(() => {
         if (cancelled || !containerRef.current) return
 
+        // 지도는 카카오 SDK만 준비되면 바로 그린다. 쉼터 데이터(네트워크 호출)를
+        // 함께 기다리면 API 응답이 느릴 때 지도 자체가 백지로 보이게 되므로 분리한다.
         const map = new window.kakao.maps.Map(containerRef.current, {
           center: new window.kakao.maps.LatLng(
             SEOUL_CITY_HALL.lat,
@@ -212,43 +214,48 @@ export default function KakaoMap() {
         }
 
         const infoWindow = new window.kakao.maps.InfoWindow()
-        const markers: kakao.maps.Marker[] = []
 
-        for (const shelter of shelters) {
-          const marker = new window.kakao.maps.Marker({
-            position: new window.kakao.maps.LatLng(
-              shelter.latitude,
-              shelter.longitude,
-            ),
-            title: shelter.name,
-          })
+        loadShelters().then((shelters) => {
+          if (cancelled) return
 
-          window.kakao.maps.event.addListener(marker, 'click', () => {
-            infoWindow.setContent(
-              buildInfoWindowContent(shelter, userLocationRef.current),
-            )
-            infoWindow.open(map, marker)
-          })
+          const markers: kakao.maps.Marker[] = []
 
-          markers.push(marker)
+          for (const shelter of shelters) {
+            const marker = new window.kakao.maps.Marker({
+              position: new window.kakao.maps.LatLng(
+                shelter.latitude,
+                shelter.longitude,
+              ),
+              title: shelter.name,
+            })
 
-          if (sharedShelterId && shelter.id === sharedShelterId) {
-            map.setCenter(
-              new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
-            )
-            infoWindow.setContent(
-              buildInfoWindowContent(shelter, userLocationRef.current),
-            )
-            infoWindow.open(map, marker)
+            window.kakao.maps.event.addListener(marker, 'click', () => {
+              infoWindow.setContent(
+                buildInfoWindowContent(shelter, userLocationRef.current),
+              )
+              infoWindow.open(map, marker)
+            })
+
+            markers.push(marker)
+
+            if (sharedShelterId && shelter.id === sharedShelterId) {
+              map.setCenter(
+                new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
+              )
+              infoWindow.setContent(
+                buildInfoWindowContent(shelter, userLocationRef.current),
+              )
+              infoWindow.open(map, marker)
+            }
           }
-        }
 
-        new window.kakao.maps.MarkerClusterer({
-          map,
-          markers,
-          gridSize: 60,
-          averageCenter: true,
-          minLevel: 6,
+          new window.kakao.maps.MarkerClusterer({
+            map,
+            markers,
+            gridSize: 60,
+            averageCenter: true,
+            minLevel: 6,
+          })
         })
       })
       .catch((err: Error) => {
