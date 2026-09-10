@@ -53,6 +53,16 @@ function pad2(value: number): string {
   return String(value).padStart(2, '0')
 }
 
+// data.go.kr은 Encoding/Decoding 두 형태의 인증키를 함께 제공해 혼동을 유발한다.
+// 이미 URL 인코딩된 키(Encoding)를 그대로 받아도 이중 인코딩되지 않도록 먼저 디코딩해둔다.
+function normalizeServiceKey(key: string): string {
+  try {
+    return decodeURIComponent(key)
+  } catch {
+    return key
+  }
+}
+
 // 초단기실황은 매시 40분에 생성되어 10분 뒤 제공되므로, 45분 이전에는 이전 시각 자료를 사용한다.
 function getBaseDateTime(now: Date): { baseDate: string; baseTime: string } {
   const d = new Date(now)
@@ -82,7 +92,7 @@ export async function fetchCurrentWeather(
   const { baseDate, baseTime } = getBaseDateTime(new Date())
 
   const params = new URLSearchParams({
-    serviceKey: KMA_API_KEY,
+    serviceKey: normalizeServiceKey(KMA_API_KEY),
     pageNo: '1',
     numOfRows: '20',
     dataType: 'JSON',
@@ -93,17 +103,29 @@ export async function fetchCurrentWeather(
   })
 
   const response = await fetch(`${KMA_BASE_URL}?${params.toString()}`)
+  const bodyText = await response.text()
+
   if (!response.ok) {
-    throw new Error('기상청 API 요청에 실패했습니다.')
+    throw new Error(
+      `기상청 API 요청에 실패했습니다. (HTTP ${response.status}) ${bodyText.slice(0, 200)}`,
+    )
   }
 
-  const json = await response.json()
-  const items = json?.response?.body?.items?.item as
-    | { category: string; obsrValue: string }[]
-    | undefined
+  let json: unknown
+  try {
+    json = JSON.parse(bodyText)
+  } catch {
+    // 서비스키 미승인/오류 시 JSON을 요청해도 XML 오류 응답이 오는 경우가 있다.
+    throw new Error(`기상청 API 응답을 해석할 수 없습니다: ${bodyText.slice(0, 200)}`)
+  }
+
+  const items = (json as { response?: { body?: { items?: { item?: unknown } } } })?.response
+    ?.body?.items?.item as { category: string; obsrValue: string }[] | undefined
 
   if (!items || items.length === 0) {
-    const resultMsg = json?.response?.header?.resultMsg ?? '알 수 없는 오류'
+    const resultMsg =
+      (json as { response?: { header?: { resultMsg?: string } } })?.response?.header
+        ?.resultMsg ?? '알 수 없는 오류'
     throw new Error(`기상청 API 응답 오류: ${resultMsg}`)
   }
 
