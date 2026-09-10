@@ -13,6 +13,7 @@ declare namespace kakao.maps {
   class Map {
     constructor(container: HTMLElement, options: MapOptions)
     setCenter(latlng: LatLng): void
+    setLevel(level: number): void
   }
 
   interface MarkerOptions {
