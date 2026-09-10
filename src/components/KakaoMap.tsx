@@ -9,6 +9,7 @@ import {
   getShelters,
   type Shelter,
 } from '../data/shelters'
+import { buildShareUrl, copyToClipboard, getShelterIdFromUrl } from '../lib/share'
 import { formatDistanceMeters, haversineDistanceMeters } from '../utils/distance'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY
@@ -35,7 +36,7 @@ function loadKakaoMapSdk(): Promise<void> {
 
   return new Promise((resolve, reject) => {
     const script = document.createElement('script')
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false`
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false&libraries=clusterer`
     script.async = true
     script.onload = () => window.kakao.maps.load(resolve)
     script.onerror = () => reject(new Error('Failed to load Kakao Maps SDK'))
@@ -107,6 +108,24 @@ function buildInfoWindowContent(
   })
   linkRow.appendChild(reportLink)
 
+  const shareLink = document.createElement('a')
+  shareLink.href = '#'
+  shareLink.textContent = '공유하기'
+  shareLink.style.cssText =
+    'color:#2563eb;text-decoration:underline;font-size:0.75rem;'
+  shareLink.addEventListener('click', (event) => {
+    event.preventDefault()
+    const shareUrl = buildShareUrl(shelter.id)
+    copyToClipboard(shareUrl).then((success) => {
+      if (success) {
+        window.alert('링크가 복사되었습니다.')
+      } else {
+        window.prompt('아래 링크를 복사하세요:', shareUrl)
+      }
+    })
+  })
+  linkRow.appendChild(shareLink)
+
   content.appendChild(linkRow)
 
   const crowdSection = document.createElement('div')
@@ -163,6 +182,7 @@ export default function KakaoMap() {
 
     let cancelled = false
     const userLocationRef = { current: null as { lat: number; lng: number } | null }
+    const sharedShelterId = getShelterIdFromUrl()
 
     loadKakaoMapSdk()
       .then(() => {
@@ -176,7 +196,7 @@ export default function KakaoMap() {
           level: 3,
         })
 
-        if (navigator.geolocation) {
+        if (navigator.geolocation && !sharedShelterId) {
           navigator.geolocation.getCurrentPosition(
             (position) => {
               if (cancelled) return
@@ -192,6 +212,7 @@ export default function KakaoMap() {
         }
 
         const infoWindow = new window.kakao.maps.InfoWindow()
+        const markers: kakao.maps.Marker[] = []
 
         for (const shelter of getShelters()) {
           const marker = new window.kakao.maps.Marker({
@@ -199,7 +220,6 @@ export default function KakaoMap() {
               shelter.latitude,
               shelter.longitude,
             ),
-            map,
             title: shelter.name,
           })
 
@@ -209,7 +229,27 @@ export default function KakaoMap() {
             )
             infoWindow.open(map, marker)
           })
+
+          markers.push(marker)
+
+          if (sharedShelterId && shelter.id === sharedShelterId) {
+            map.setCenter(
+              new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
+            )
+            infoWindow.setContent(
+              buildInfoWindowContent(shelter, userLocationRef.current),
+            )
+            infoWindow.open(map, marker)
+          }
         }
+
+        new window.kakao.maps.MarkerClusterer({
+          map,
+          markers,
+          gridSize: 60,
+          averageCenter: true,
+          minLevel: 6,
+        })
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message)
