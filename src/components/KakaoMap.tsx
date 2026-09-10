@@ -215,48 +215,65 @@ export default function KakaoMap() {
 
         const infoWindow = new window.kakao.maps.InfoWindow()
 
-        loadShelters().then((shelters) => {
-          if (cancelled) return
+        loadShelters()
+          .then((shelters) => {
+            if (cancelled) return
 
-          const markers: kakao.maps.Marker[] = []
+            console.info(`쉼터 ${shelters.length}건을 불러왔습니다.`)
 
-          for (const shelter of shelters) {
-            const marker = new window.kakao.maps.Marker({
-              position: new window.kakao.maps.LatLng(
-                shelter.latitude,
-                shelter.longitude,
-              ),
-              title: shelter.name,
-            })
+            const markers: kakao.maps.Marker[] = []
 
-            window.kakao.maps.event.addListener(marker, 'click', () => {
-              infoWindow.setContent(
-                buildInfoWindowContent(shelter, userLocationRef.current),
-              )
-              infoWindow.open(map, marker)
-            })
+            for (const shelter of shelters) {
+              const marker = new window.kakao.maps.Marker({
+                position: new window.kakao.maps.LatLng(
+                  shelter.latitude,
+                  shelter.longitude,
+                ),
+                title: shelter.name,
+              })
 
-            markers.push(marker)
+              window.kakao.maps.event.addListener(marker, 'click', () => {
+                infoWindow.setContent(
+                  buildInfoWindowContent(shelter, userLocationRef.current),
+                )
+                infoWindow.open(map, marker)
+              })
 
-            if (sharedShelterId && shelter.id === sharedShelterId) {
-              map.setCenter(
-                new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
-              )
-              infoWindow.setContent(
-                buildInfoWindowContent(shelter, userLocationRef.current),
-              )
-              infoWindow.open(map, marker)
+              markers.push(marker)
+
+              if (sharedShelterId && shelter.id === sharedShelterId) {
+                map.setCenter(
+                  new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
+                )
+                infoWindow.setContent(
+                  buildInfoWindowContent(shelter, userLocationRef.current),
+                )
+                infoWindow.open(map, marker)
+              }
             }
-          }
 
-          new window.kakao.maps.MarkerClusterer({
-            map,
-            markers,
-            gridSize: 60,
-            averageCenter: true,
-            minLevel: 6,
+            try {
+              new window.kakao.maps.MarkerClusterer({
+                map,
+                markers,
+                gridSize: 60,
+                averageCenter: true,
+                minLevel: 6,
+              })
+            } catch (clustererErr) {
+              // 클러스터러 초기화가 실패해도 마커 자체는 보이도록 개별로 지도에 올린다.
+              console.warn(
+                '마커 클러스터러 초기화에 실패하여 개별 마커로 표시합니다.',
+                clustererErr,
+              )
+              for (const marker of markers) {
+                marker.setMap(map)
+              }
+            }
           })
-        })
+          .catch((err: Error) => {
+            console.error('쉼터 마커를 지도에 표시하는 중 오류가 발생했습니다.', err)
+          })
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message)
