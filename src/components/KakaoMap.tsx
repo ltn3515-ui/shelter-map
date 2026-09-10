@@ -52,7 +52,7 @@ function buildInfoWindowContent(
 
   const content = document.createElement('div')
   content.style.cssText =
-    'padding:8px 10px;font-size:13px;line-height:1.6;white-space:nowrap;'
+    'padding:8px 10px;font-size:0.8125rem;line-height:1.6;white-space:nowrap;'
 
   const title = document.createElement('div')
   title.style.fontWeight = 'bold'
@@ -77,9 +77,12 @@ function buildInfoWindowContent(
   content.appendChild(statusEl)
 
   const disclaimerEl = document.createElement('div')
-  disclaimerEl.style.cssText = 'margin-top:2px;font-size:10px;color:#9ca3af;'
+  disclaimerEl.style.cssText = 'margin-top:2px;font-size:0.625rem;color:#9ca3af;'
   disclaimerEl.textContent = '실제 운영 상황과 다를 수 있습니다.'
   content.appendChild(disclaimerEl)
+
+  const linkRow = document.createElement('div')
+  linkRow.style.cssText = 'display:flex;gap:10px;margin-top:6px;'
 
   const directionsLink = document.createElement('a')
   directionsLink.href = `https://map.kakao.com/link/to/${encodeURIComponent(
@@ -89,8 +92,22 @@ function buildInfoWindowContent(
   directionsLink.rel = 'noopener noreferrer'
   directionsLink.textContent = '길찾기'
   directionsLink.style.cssText =
-    'display:inline-block;margin-top:6px;color:#2563eb;text-decoration:underline;font-size:12px;'
-  content.appendChild(directionsLink)
+    'color:#2563eb;text-decoration:underline;font-size:0.75rem;'
+  linkRow.appendChild(directionsLink)
+
+  const reportLink = document.createElement('a')
+  reportLink.href = '#'
+  reportLink.textContent = '정보가 틀렸나요?'
+  reportLink.style.cssText =
+    'color:#6b7280;text-decoration:underline;font-size:0.75rem;'
+  reportLink.addEventListener('click', (event) => {
+    event.preventDefault()
+    // TODO: Supabase 연동 시 실제 신고 데이터를 저장하도록 교체
+    window.alert('신고해주셔서 감사합니다.')
+  })
+  linkRow.appendChild(reportLink)
+
+  content.appendChild(linkRow)
 
   const crowdSection = document.createElement('div')
   crowdSection.style.cssText = 'margin-top:8px;'
@@ -99,14 +116,14 @@ function buildInfoWindowContent(
   buttonRow.style.cssText = 'display:flex;gap:4px;'
 
   const feedbackEl = document.createElement('div')
-  feedbackEl.style.cssText = 'margin-top:4px;font-size:11px;color:#2563eb;'
+  feedbackEl.style.cssText = 'margin-top:4px;font-size:0.6875rem;color:#2563eb;'
 
   for (const option of CROWD_STATUS_OPTIONS) {
     const button = document.createElement('button')
     button.type = 'button'
     button.textContent = option
     button.style.cssText =
-      'flex:1;padding:4px 0;font-size:12px;border:1px solid #d1d5db;border-radius:4px;background:#f9fafb;cursor:pointer;'
+      'flex:1;padding:4px 0;font-size:0.75rem;border:1px solid #d1d5db;border-radius:4px;background:#f9fafb;cursor:pointer;'
     button.addEventListener('click', () => {
       button.disabled = true
       feedbackEl.style.color = '#2563eb'
