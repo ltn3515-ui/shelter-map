@@ -17,9 +17,11 @@ const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY
 // Seoul City Hall
 const SEOUL_CITY_HALL = { lat: 37.5665, lng: 126.978 }
 
+// "내 위치" 버튼으로 위치를 확인하면 이 반경(m) 안의 쉼터만 마커로 보여준다.
+const NEARBY_RADIUS_METERS = 3000
+// 위치를 아직 모를 때(또는 반경 내에 쉼터가 없을 때)의 기본 표시 개수.
 // 실제 데이터는 전국 단위(수만 건)라 전부 마커로 만들면 생성·클러스터링 비용 때문에
-// 스크롤/조작이 버벅인다. 사용자 위치(또는 기본 위치) 기준 가까운 순으로 이 개수만
-// 렌더링한다 — "내 주변 쉼터"라는 목적에는 충분하고, 화면도 매끄럽게 유지된다.
+// 스크롤/조작이 버벅이므로, 가까운 순으로 이 개수까지만 렌더링한다.
 const MAX_RENDERED_MARKERS = 500
 
 const OPEN_STATUS_LABEL = {
@@ -47,6 +49,50 @@ function loadKakaoMapSdk(): Promise<void> {
     script.onerror = () => reject(new Error('Failed to load Kakao Maps SDK'))
     document.head.appendChild(script)
   })
+}
+
+// 위치가 있으면 반경 이내(없으면 가장 가까운 것들로 대체)를, 없으면 기본 위치 기준
+// 가까운 순 상위 N개를 고른다. 공유 링크로 지정된 쉼터는 항상 포함한다.
+function selectSheltersToRender(
+  allShelters: Shelter[],
+  location: { lat: number; lng: number } | null,
+  sharedShelterId: string | null,
+): Shelter[] {
+  const origin = location ?? SEOUL_CITY_HALL
+  const byDistance = allShelters
+    .map((shelter) => ({
+      shelter,
+      distanceMeters: haversineDistanceMeters(
+        origin.lat,
+        origin.lng,
+        shelter.latitude,
+        shelter.longitude,
+      ),
+    }))
+    .sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+  let selected: Shelter[]
+  if (location) {
+    const withinRadius = byDistance
+      .filter((entry) => entry.distanceMeters <= NEARBY_RADIUS_METERS)
+      .map((entry) => entry.shelter)
+    // 반경 안에 하나도 없으면(외곽 지역 등) 그래도 가장 가까운 곳들을 보여준다.
+    selected =
+      withinRadius.length > 0
+        ? withinRadius
+        : byDistance.slice(0, MAX_RENDERED_MARKERS).map((entry) => entry.shelter)
+  } else {
+    selected = byDistance.slice(0, MAX_RENDERED_MARKERS).map((entry) => entry.shelter)
+  }
+
+  if (sharedShelterId && !selected.some((shelter) => shelter.id === sharedShelterId)) {
+    const sharedShelter = allShelters.find((shelter) => shelter.id === sharedShelterId)
+    if (sharedShelter) {
+      selected = [...selected, sharedShelter]
+    }
+  }
+
+  return selected
 }
 
 function buildInfoWindowContent(
@@ -178,6 +224,9 @@ function buildInfoWindowContent(
 export default function KakaoMap() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [locating, setLocating] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const requestLocationRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!KAKAO_MAP_KEY) {
@@ -188,6 +237,8 @@ export default function KakaoMap() {
     let cancelled = false
     const userLocationRef = { current: null as { lat: number; lng: number } | null }
     const sharedShelterId = getShelterIdFromUrl()
+    const allSheltersRef = { current: [] as Shelter[] }
+    const currentMarkersRef = { current: [] as kakao.maps.Marker[] }
 
     loadKakaoMapSdk()
       .then(() => {
@@ -203,112 +254,110 @@ export default function KakaoMap() {
           level: 3,
         })
 
-        if (navigator.geolocation && !sharedShelterId) {
+        const infoWindow = new window.kakao.maps.InfoWindow()
+
+        function renderMarkers() {
+          for (const marker of currentMarkersRef.current) {
+            marker.setMap(null)
+          }
+          currentMarkersRef.current = []
+
+          const shelters = selectSheltersToRender(
+            allSheltersRef.current,
+            userLocationRef.current,
+            sharedShelterId,
+          )
+
+          console.info(`지도에 쉼터 ${shelters.length}건을 표시합니다.`)
+
+          const markers: kakao.maps.Marker[] = []
+
+          for (const shelter of shelters) {
+            const marker = new window.kakao.maps.Marker({
+              position: new window.kakao.maps.LatLng(
+                shelter.latitude,
+                shelter.longitude,
+              ),
+              title: shelter.name,
+            })
+
+            window.kakao.maps.event.addListener(marker, 'click', () => {
+              infoWindow.setContent(
+                buildInfoWindowContent(shelter, userLocationRef.current),
+              )
+              infoWindow.open(map, marker)
+            })
+
+            markers.push(marker)
+
+            if (sharedShelterId && shelter.id === sharedShelterId) {
+              map.setCenter(
+                new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
+              )
+              infoWindow.setContent(
+                buildInfoWindowContent(shelter, userLocationRef.current),
+              )
+              infoWindow.open(map, marker)
+            }
+          }
+
+          try {
+            new window.kakao.maps.MarkerClusterer({
+              map,
+              markers,
+              gridSize: 60,
+              averageCenter: true,
+              minLevel: 6,
+            })
+          } catch (clustererErr) {
+            // 클러스터러 초기화가 실패해도 마커 자체는 보이도록 개별로 지도에 올린다.
+            console.warn(
+              '마커 클러스터러 초기화에 실패하여 개별 마커로 표시합니다.',
+              clustererErr,
+            )
+            for (const marker of markers) {
+              marker.setMap(map)
+            }
+          }
+
+          currentMarkersRef.current = markers
+        }
+
+        requestLocationRef.current = () => {
+          if (!navigator.geolocation) {
+            setLocationError('이 브라우저는 위치 정보를 지원하지 않습니다.')
+            return
+          }
+          setLocating(true)
+          setLocationError(null)
           navigator.geolocation.getCurrentPosition(
             (position) => {
               if (cancelled) return
               const { latitude, longitude } = position.coords
               userLocationRef.current = { lat: latitude, lng: longitude }
               map.setCenter(new window.kakao.maps.LatLng(latitude, longitude))
+              map.setLevel(5)
+              renderMarkers()
+              setLocating(false)
             },
             (geoError) => {
+              if (cancelled) return
+              setLocating(false)
+              setLocationError(
+                '위치 정보를 가져오지 못했습니다. 브라우저 위치 권한을 확인해주세요.',
+              )
               console.warn('위치 정보를 가져오지 못했습니다.', geoError.message)
             },
             { enableHighAccuracy: true, timeout: 10000 },
           )
         }
 
-        const infoWindow = new window.kakao.maps.InfoWindow()
-
         loadShelters()
           .then((shelters) => {
             if (cancelled) return
-
             console.info(`쉼터 ${shelters.length}건을 불러왔습니다.`)
-
-            const origin = userLocationRef.current ?? SEOUL_CITY_HALL
-            const byDistance = shelters
-              .map((shelter) => ({
-                shelter,
-                distanceMeters: haversineDistanceMeters(
-                  origin.lat,
-                  origin.lng,
-                  shelter.latitude,
-                  shelter.longitude,
-                ),
-              }))
-              .sort((a, b) => a.distanceMeters - b.distanceMeters)
-
-            let nearestShelters = byDistance
-              .slice(0, MAX_RENDERED_MARKERS)
-              .map((entry) => entry.shelter)
-
-            // 공유 링크로 지정된 쉼터는 거리와 무관하게 항상 표시 대상에 포함한다.
-            if (
-              sharedShelterId &&
-              !nearestShelters.some((shelter) => shelter.id === sharedShelterId)
-            ) {
-              const sharedShelter = shelters.find(
-                (shelter) => shelter.id === sharedShelterId,
-              )
-              if (sharedShelter) {
-                nearestShelters = [...nearestShelters, sharedShelter]
-              }
-            }
-
-            console.info(
-              `성능을 위해 가까운 쉼터 ${nearestShelters.length}건만 지도에 표시합니다.`,
-            )
-
-            const markers: kakao.maps.Marker[] = []
-
-            for (const shelter of nearestShelters) {
-              const marker = new window.kakao.maps.Marker({
-                position: new window.kakao.maps.LatLng(
-                  shelter.latitude,
-                  shelter.longitude,
-                ),
-                title: shelter.name,
-              })
-
-              window.kakao.maps.event.addListener(marker, 'click', () => {
-                infoWindow.setContent(
-                  buildInfoWindowContent(shelter, userLocationRef.current),
-                )
-                infoWindow.open(map, marker)
-              })
-
-              markers.push(marker)
-
-              if (sharedShelterId && shelter.id === sharedShelterId) {
-                map.setCenter(
-                  new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
-                )
-                infoWindow.setContent(
-                  buildInfoWindowContent(shelter, userLocationRef.current),
-                )
-                infoWindow.open(map, marker)
-              }
-            }
-
-            try {
-              new window.kakao.maps.MarkerClusterer({
-                map,
-                markers,
-                gridSize: 60,
-                averageCenter: true,
-                minLevel: 6,
-              })
-            } catch (clustererErr) {
-              // 클러스터러 초기화가 실패해도 마커 자체는 보이도록 개별로 지도에 올린다.
-              console.warn(
-                '마커 클러스터러 초기화에 실패하여 개별 마커로 표시합니다.',
-                clustererErr,
-              )
-              for (const marker of markers) {
-                marker.setMap(map)
-              }
-            }
+            allSheltersRef.current = shelters
+            renderMarkers()
           })
           .catch((err: Error) => {
             console.error('쉼터 마커를 지도에 표시하는 중 오류가 발생했습니다.', err)
@@ -331,5 +380,24 @@ export default function KakaoMap() {
     )
   }
 
-  return <div ref={containerRef} className="h-full w-full" />
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+
+      <button
+        type="button"
+        onClick={() => requestLocationRef.current?.()}
+        disabled={locating}
+        className="absolute bottom-6 right-4 z-10 rounded-full bg-white/90 px-4 py-2 text-sm font-medium shadow-lg disabled:opacity-60"
+      >
+        📍 {locating ? '위치 확인 중...' : '내 위치'}
+      </button>
+
+      {locationError && (
+        <div className="absolute bottom-20 right-4 z-10 max-w-[220px] rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 shadow">
+          {locationError}
+        </div>
+      )}
+    </div>
+  )
 }
