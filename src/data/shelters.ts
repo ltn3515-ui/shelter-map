@@ -18,6 +18,7 @@ export interface OperatingHours {
 }
 
 export interface Shelter {
+  id: string
   name: string
   latitude: number
   longitude: number
@@ -55,7 +56,8 @@ function parseSummerShelters(): Shelter[] {
     const latitude = toCoordinate(row.LA)
     const longitude = toCoordinate(row.LO)
     const name = row.RSTR_NM?.trim()
-    if (latitude == null || longitude == null || !name) continue
+    const facilityNo = row.RSTR_FCLTY_NO?.trim()
+    if (latitude == null || longitude == null || !name || !facilityNo) continue
 
     const weekday = toDayHours(
       row.WKDAY_OPER_BEGIN_TIME,
@@ -70,7 +72,14 @@ function parseSummerShelters(): Shelter[] {
         ? { weekday, saturday: weekend, sunday: weekend, holiday: weekend }
         : undefined
 
-    shelters.push({ name, latitude, longitude, type: 'summer', operatingHours })
+    shelters.push({
+      id: `summer-${facilityNo}`,
+      name,
+      latitude,
+      longitude,
+      type: 'summer',
+      operatingHours,
+    })
   }
   return shelters
 }
@@ -82,7 +91,8 @@ function parseWinterShelters(): Shelter[] {
     const latitude = toCoordinate(row.LAT)
     const longitude = toCoordinate(row.LOT)
     const name = row.REARE_NM?.trim()
-    if (latitude == null || longitude == null || !name) continue
+    const facilityNo = row.REARE_FCLT_NO?.trim()
+    if (latitude == null || longitude == null || !name || !facilityNo) continue
 
     const weekday = toDayHours(row.WKDY_OPER_BGNG_HR, row.WKDY_OPER_END_HR)
     const saturday = toDayHours(row.STDY_OPER_BGNG_HR, row.STDY_OPER_END_HR)
@@ -93,13 +103,24 @@ function parseWinterShelters(): Shelter[] {
         ? { weekday, saturday, sunday, holiday }
         : undefined
 
-    shelters.push({ name, latitude, longitude, type: 'winter', operatingHours })
+    shelters.push({
+      id: `winter-${facilityNo}`,
+      name,
+      latitude,
+      longitude,
+      type: 'winter',
+      operatingHours,
+    })
   }
   return shelters
 }
 
 export function getShelters(): Shelter[] {
   return [...parseSummerShelters(), ...parseWinterShelters()]
+}
+
+export function findShelterById(id: string): Shelter | undefined {
+  return getShelters().find((shelter) => shelter.id === id)
 }
 
 function hhmmToMinutes(value: string): number {

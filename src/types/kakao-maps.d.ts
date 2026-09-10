@@ -44,6 +44,18 @@ declare namespace kakao.maps {
       handler: () => void,
     ): void
   }
+
+  interface MarkerClustererOptions {
+    map: Map
+    markers?: Marker[]
+    gridSize?: number
+    averageCenter?: boolean
+    minLevel?: number
+  }
+
+  class MarkerClusterer {
+    constructor(options: MarkerClustererOptions)
+  }
 }
 
 interface Window {
