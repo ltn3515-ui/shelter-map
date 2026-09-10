@@ -11,6 +11,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
+      // 새 배포가 있으면 기존에 열려 있던 탭에서도 서비스워커가 즉시 활성화되도록 한다.
+      // 이게 없으면 새로고침해도 예전 버전이 계속 캐시에서 서빙되어, 매번 수동으로
+      // 서비스워커를 해제하고 캐시를 지워야 하는 문제가 생긴다.
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+      },
       manifest: {
         name: '잠깐',
         short_name: '잠깐',
