@@ -36,6 +36,30 @@ const OPEN_STATUS_COLOR = {
   unknown: '#6b7280',
 } as const
 
+type ShelterFilter = 'all' | Shelter['type']
+
+const SHELTER_TYPE_LABEL: Record<Shelter['type'], string> = {
+  summer: '무더위쉼터',
+  winter: '한파쉼터',
+}
+
+// 지도 위에서 무더위쉼터(주황)와 한파쉼터(파랑)를 한눈에 구분할 수 있도록 마커 색을 다르게 한다.
+const SHELTER_TYPE_COLOR: Record<Shelter['type'], string> = {
+  summer: '#ea580c',
+  winter: '#2563eb',
+}
+
+const FILTER_OPTIONS: { value: ShelterFilter; label: string }[] = [
+  { value: 'all', label: '전체' },
+  { value: 'summer', label: '무더위' },
+  { value: 'winter', label: '한파' },
+]
+
+function buildPinMarkerImageUrl(color: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38"><path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 24 14 24s14-13.5 14-24C28 6.268 21.732 0 14 0z" fill="${color}"/><circle cx="14" cy="14" r="5" fill="#fff"/></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
 function loadKakaoMapSdk(): Promise<void> {
   if (window.kakao?.maps) {
     return Promise.resolve()
@@ -52,14 +76,18 @@ function loadKakaoMapSdk(): Promise<void> {
 }
 
 // 위치가 있으면 반경 이내(없으면 가장 가까운 것들로 대체)를, 없으면 기본 위치 기준
-// 가까운 순 상위 N개를 고른다. 공유 링크로 지정된 쉼터는 항상 포함한다.
+// 가까운 순 상위 N개를 고른다. 공유 링크로 지정된 쉼터는 필터와 무관하게 항상 포함한다.
 function selectSheltersToRender(
   allShelters: Shelter[],
   location: { lat: number; lng: number } | null,
   sharedShelterId: string | null,
+  filter: ShelterFilter,
 ): Shelter[] {
+  const typeFiltered =
+    filter === 'all' ? allShelters : allShelters.filter((shelter) => shelter.type === filter)
+
   const origin = location ?? SEOUL_CITY_HALL
-  const byDistance = allShelters
+  const byDistance = typeFiltered
     .map((shelter) => ({
       shelter,
       distanceMeters: haversineDistanceMeters(
@@ -99,7 +127,7 @@ function buildInfoWindowContent(
   shelter: Shelter,
   userLocation: { lat: number; lng: number } | null,
 ): HTMLElement {
-  const label = shelter.type === 'summer' ? '무더위쉼터' : '한파쉼터'
+  const label = SHELTER_TYPE_LABEL[shelter.type]
   const status = getShelterOpenStatus(shelter.operatingHours)
 
   const content = document.createElement('div')
@@ -226,7 +254,9 @@ export default function KakaoMap() {
   const [error, setError] = useState<string | null>(null)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<ShelterFilter>('all')
   const requestLocationRef = useRef<(() => void) | null>(null)
+  const setFilterRef = useRef<((filter: ShelterFilter) => void) | null>(null)
 
   useEffect(() => {
     if (!KAKAO_MAP_KEY) {
@@ -239,6 +269,7 @@ export default function KakaoMap() {
     const sharedShelterId = getShelterIdFromUrl()
     const allSheltersRef = { current: [] as Shelter[] }
     const currentMarkersRef = { current: [] as kakao.maps.Marker[] }
+    const filterRef = { current: 'all' as ShelterFilter }
 
     loadKakaoMapSdk()
       .then(() => {
@@ -256,6 +287,19 @@ export default function KakaoMap() {
 
         const infoWindow = new window.kakao.maps.InfoWindow()
 
+        const markerImages: Record<Shelter['type'], kakao.maps.MarkerImage> = {
+          summer: new window.kakao.maps.MarkerImage(
+            buildPinMarkerImageUrl(SHELTER_TYPE_COLOR.summer),
+            new window.kakao.maps.Size(28, 38),
+            { offset: new window.kakao.maps.Point(14, 38) },
+          ),
+          winter: new window.kakao.maps.MarkerImage(
+            buildPinMarkerImageUrl(SHELTER_TYPE_COLOR.winter),
+            new window.kakao.maps.Size(28, 38),
+            { offset: new window.kakao.maps.Point(14, 38) },
+          ),
+        }
+
         function renderMarkers() {
           for (const marker of currentMarkersRef.current) {
             marker.setMap(null)
@@ -266,6 +310,7 @@ export default function KakaoMap() {
             allSheltersRef.current,
             userLocationRef.current,
             sharedShelterId,
+            filterRef.current,
           )
 
           console.info(`지도에 쉼터 ${shelters.length}건을 표시합니다.`)
@@ -279,6 +324,7 @@ export default function KakaoMap() {
                 shelter.longitude,
               ),
               title: shelter.name,
+              image: markerImages[shelter.type],
             })
 
             window.kakao.maps.event.addListener(marker, 'click', () => {
@@ -352,6 +398,12 @@ export default function KakaoMap() {
           )
         }
 
+        setFilterRef.current = (nextFilter) => {
+          filterRef.current = nextFilter
+          renderMarkers()
+          setFilter(nextFilter)
+        }
+
         loadShelters()
           .then((shelters) => {
             if (cancelled) return
@@ -383,6 +435,27 @@ export default function KakaoMap() {
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+
+      <div className="absolute bottom-6 left-4 z-10 flex gap-1 rounded-full bg-white/90 p-1 shadow-lg">
+        {FILTER_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setFilterRef.current?.(option.value)}
+            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              filter === option.value ? 'bg-gray-900 text-white' : 'text-gray-600'
+            }`}
+          >
+            {option.value !== 'all' && (
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: SHELTER_TYPE_COLOR[option.value] }}
+              />
+            )}
+            {option.label}
+          </button>
+        ))}
+      </div>
 
       <button
         type="button"

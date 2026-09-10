@@ -16,10 +16,27 @@ declare namespace kakao.maps {
     setLevel(level: number): void
   }
 
+  class Size {
+    constructor(width: number, height: number)
+  }
+
+  class Point {
+    constructor(x: number, y: number)
+  }
+
+  interface MarkerImageOptions {
+    offset?: Point
+  }
+
+  class MarkerImage {
+    constructor(src: string, size: Size, options?: MarkerImageOptions)
+  }
+
   interface MarkerOptions {
     position: LatLng
     map?: Map
     title?: string
+    image?: MarkerImage
   }
 
   class Marker {
