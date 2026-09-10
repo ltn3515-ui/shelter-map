@@ -1,18 +1,54 @@
-import type { ProxyRequest, ProxyResponse } from '../_lib/types'
-import { proxySafetyDataRequest } from '../_lib/safetyDataProxy'
+// Vercel Serverless Function: 브라우저 대신 safetydata.go.kr 한파쉼터 API를 호출해
+// CORS를 우회하고, 서비스키를 서버 쪽에만 둔다. (VITE_ 접두사 없는 WINTER_SHELTER_API_KEY)
+//
+// 다른 파일을 import하지 않고 이 파일 하나로 완결시킨다 — Vercel 함수 번들링 시
+// 상대 경로 공용 모듈을 잘못 추적하는 문제를 원천적으로 피하기 위함이다.
+
+interface ProxyRequest {
+  query: Record<string, string | string[] | undefined>
+}
+
+interface ProxyResponse {
+  status(code: number): ProxyResponse
+  setHeader(name: string, value: string): void
+  send(body: string): void
+  json(body: unknown): void
+}
 
 const WINTER_API_URL = 'https://www.safetydata.go.kr/V2/api/DSSP-IF-10804'
 
+function firstValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
 export default async function handler(req: ProxyRequest, res: ProxyResponse) {
   try {
-    const { status, contentType, body } = await proxySafetyDataRequest(req.query, {
-      apiUrl: WINTER_API_URL,
-      serviceKeyEnvVar: 'WINTER_SHELTER_API_KEY',
-      label: '한파쉼터',
+    const serviceKey = process.env.WINTER_SHELTER_API_KEY
+    if (!serviceKey) {
+      res.status(500)
+      res.json({ error: '한파쉼터 서비스키(WINTER_SHELTER_API_KEY)가 서버에 설정되어 있지 않습니다.' })
+      return
+    }
+
+    const pageNo = firstValue(req.query.pageNo) ?? '1'
+    const numOfRows = firstValue(req.query.numOfRows) ?? '1000'
+
+    const params = new URLSearchParams({
+      serviceKey,
+      returnType: 'json',
+      pageNo,
+      numOfRows,
     })
-    res.status(status).setHeader('Content-Type', contentType).send(body)
+
+    const upstream = await fetch(`${WINTER_API_URL}?${params.toString()}`)
+    const body = await upstream.text()
+
+    res.status(upstream.status)
+    res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json')
+    res.send(body)
   } catch (err) {
-    res.status(502).json({
+    res.status(502)
+    res.json({
       error: `한파쉼터 프록시 호출 중 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`,
     })
   }
