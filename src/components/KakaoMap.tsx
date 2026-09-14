@@ -5,6 +5,7 @@ import { GEOLOCATION_OPTIONS, getAccuracyLabel, getLocationErrorMessage, type Lo
 import { haversineDistanceMeters } from '../utils/distance'
 import MapSearchPanel, { type Filter } from './MapSearchPanel'
 import NearbyShelterList, { type NearbyShelter } from './NearbyShelterList'
+import ShelterBottomSheet from './ShelterBottomSheet'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY
 const DEFAULT_MAP_CENTER = { lat: 37.5665, lng: 126.978 }
@@ -52,6 +53,7 @@ export default function KakaoMap() {
   const [mapError, setMapError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const [selectedShelter, setSelectedShelter] = useState<Shelter | null>(null)
 
   useEffect(() => {
     if (!KAKAO_MAP_KEY) {
@@ -76,9 +78,7 @@ export default function KakaoMap() {
 
     return () => {
       cancelled = true
-      if (watchIdRef.current != null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-      }
+      if (watchIdRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(watchIdRef.current)
     }
   }, [])
 
@@ -91,10 +91,7 @@ export default function KakaoMap() {
         if (!normalizedQuery) return true
         return `${shelter.name} ${shelter.address ?? ''}`.toLowerCase().includes(normalizedQuery)
       })
-      .map((shelter) => ({
-        shelter,
-        distanceMeters: haversineDistanceMeters(location.lat, location.lng, shelter.latitude, shelter.longitude),
-      }))
+      .map((shelter) => ({ shelter, distanceMeters: haversineDistanceMeters(location.lat, location.lng, shelter.latitude, shelter.longitude) }))
       .filter((item) => item.distanceMeters <= NEARBY_RADIUS_METERS || Boolean(normalizedQuery))
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
   }, [filter, location, query, shelters])
@@ -102,7 +99,6 @@ export default function KakaoMap() {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-
     shelterMarkersRef.current.forEach((marker) => marker.setMap(null))
     shelterMarkersRef.current = []
 
@@ -111,18 +107,14 @@ export default function KakaoMap() {
       winter: new window.kakao.maps.MarkerImage(buildPinMarkerImageUrl(SHELTER_TYPE_COLOR.winter), new window.kakao.maps.Size(28, 38), { offset: new window.kakao.maps.Point(14, 38) }),
     }
 
-    const visible = nearbyShelters.slice(0, MAX_RENDERED_MARKERS)
-    for (const { shelter } of visible) {
+    for (const { shelter } of nearbyShelters.slice(0, MAX_RENDERED_MARKERS)) {
       const marker = new window.kakao.maps.Marker({
         map,
         position: new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude),
         title: shelter.name,
         image: markerImages[shelter.type],
       })
-      window.kakao.maps.event.addListener(marker, 'click', () => {
-        map.setCenter(new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude))
-        map.setLevel(3)
-      })
+      window.kakao.maps.event.addListener(marker, 'click', () => focusShelter(shelter))
       shelterMarkersRef.current.push(marker)
     }
   }, [nearbyShelters])
@@ -132,7 +124,6 @@ export default function KakaoMap() {
     const map = mapRef.current
     const position = new window.kakao.maps.LatLng(location.lat, location.lng)
     map.setCenter(position)
-
     if (!currentLocationMarkerRef.current) {
       currentLocationMarkerRef.current = new window.kakao.maps.Marker({
         map,
@@ -153,17 +144,11 @@ export default function KakaoMap() {
       return
     }
     if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
-
     setLocating(true)
     setLocationError(null)
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: position.timestamp,
-        })
+        setLocation({ lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp })
         setLocating(false)
       },
       (error) => {
@@ -179,6 +164,7 @@ export default function KakaoMap() {
     if (!map) return
     map.setCenter(new window.kakao.maps.LatLng(shelter.latitude, shelter.longitude))
     map.setLevel(3)
+    setSelectedShelter(shelter)
   }
 
   useEffect(() => {
@@ -188,44 +174,40 @@ export default function KakaoMap() {
     if (shared) focusShelter(shared)
   }, [shelters])
 
-  if (mapError) {
-    return <div className="flex h-full items-center justify-center bg-red-50 p-6 text-center text-sm text-red-600">{mapError}</div>
-  }
+  const selectedDistance = useMemo(() => {
+    if (!selectedShelter || !location) return null
+    return haversineDistanceMeters(location.lat, location.lng, selectedShelter.latitude, selectedShelter.longitude)
+  }, [location, selectedShelter])
+
+  if (mapError) return <div className="flex h-full items-center justify-center bg-red-50 p-6 text-center text-sm text-red-600">{mapError}</div>
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-100">
       <div ref={containerRef} className="h-full w-full" />
-
       <div className="absolute left-3 right-3 top-16 z-20 mx-auto max-w-md">
         <MapSearchPanel query={query} filter={filter} onQueryChange={setQuery} onFilterChange={setFilter} resultCount={nearbyShelters.length} />
       </div>
-
       {location && (
         <div className="absolute left-3 top-40 z-20 rounded-xl bg-white/95 px-3 py-2 text-xs shadow">
           <strong>GPS {getAccuracyLabel(location.accuracy)}</strong>
           <span className="ml-2 text-gray-500">오차 약 ±{Math.round(location.accuracy)}m</span>
         </div>
       )}
-
-      <div className="absolute bottom-20 left-3 right-3 z-20 mx-auto max-w-md">
-        <NearbyShelterList items={nearbyShelters.slice(0, 10)} onSelect={focusShelter} />
-      </div>
-
-      <button
-        type="button"
-        onClick={startLocationTracking}
-        disabled={locating}
-        className="absolute bottom-4 right-4 z-20 rounded-full bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60"
-      >
+      {!selectedShelter && (
+        <div className="absolute bottom-20 left-3 right-3 z-20 mx-auto max-w-md">
+          <NearbyShelterList items={nearbyShelters.slice(0, 10)} onSelect={focusShelter} />
+        </div>
+      )}
+      <button type="button" onClick={startLocationTracking} disabled={locating} className="absolute bottom-4 right-4 z-20 rounded-full bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">
         📍 {locating ? '위치 확인 중' : location ? '내 위치 다시 찾기' : '내 위치 찾기'}
       </button>
-
       {locationError && (
         <div className="absolute bottom-20 right-3 z-30 max-w-[280px] rounded-xl bg-red-50 p-3 text-xs text-red-700 shadow-xl">
           <p>{locationError}</p>
           <button type="button" onClick={startLocationTracking} className="mt-2 font-bold underline">위치 다시 확인</button>
         </div>
       )}
+      <ShelterBottomSheet shelter={selectedShelter} distanceMeters={selectedDistance} onClose={() => setSelectedShelter(null)} />
     </div>
   )
 }
