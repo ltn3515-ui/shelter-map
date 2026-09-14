@@ -3,46 +3,40 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
-      // 새 배포가 있으면 기존에 열려 있던 탭에서도 서비스워커가 즉시 활성화되도록 한다.
-      // 이게 없으면 새로고침해도 예전 버전이 계속 캐시에서 서빙되어, 매번 수동으로
-      // 서비스워커를 해제하고 캐시를 지워야 하는 문제가 생긴다.
+      includeAssets: ['favicon.svg', 'icons.svg'],
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        navigateFallback: '/index.html',
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
       },
       manifest: {
-        name: '잠깐',
+        id: '/',
+        name: '잠깐 - 전국 폭염·한파 쉼터 지도',
         short_name: '잠깐',
-        description: '주변 무더위쉼터·한파쉼터를 찾아주는 지도',
-        theme_color: '#1B6E78',
-        background_color: '#1B6E78',
-        display: 'standalone',
+        description: '내 위치와 현재 날씨를 기준으로 가까운 무더위쉼터·한파쉼터를 찾아주는 안전 지도',
+        lang: 'ko-KR',
         start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'portrait-primary',
+        theme_color: '#1B6E78',
+        background_color: '#F8FAFC',
+        categories: ['navigation', 'health', 'utilities'],
         icons: [
-          {
-            src: '/pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: '/pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-          {
-            src: '/pwa-maskable-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
+          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        shortcuts: [
+          { name: '쉼터 찾기', short_name: '쉼터 찾기', description: '현재 위치 주변 쉼터 찾기', url: '/' },
         ],
       },
     }),
