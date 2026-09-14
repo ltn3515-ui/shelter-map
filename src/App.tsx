@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import KakaoMap from './components/KakaoMap'
+import PWAInstallPrompt from './components/PWAInstallPrompt'
 import WeatherBanner from './components/WeatherBanner'
 
 const LARGE_TEXT_STORAGE_KEY = 'shelter-map:large-text'
@@ -25,7 +26,7 @@ function App() {
   }, [largeText])
 
   return (
-    <div className="relative h-screen w-screen">
+    <div className="relative h-screen w-screen overflow-hidden">
       <WeatherBanner />
       <button
         type="button"
@@ -33,11 +34,12 @@ function App() {
         aria-pressed={largeText}
         aria-label="큰 글자 모드 전환"
         title="큰 글자 모드 전환"
-        className="absolute top-3 right-3 z-10 rounded-lg bg-white/90 px-3 py-2 text-sm font-bold shadow"
+        className="absolute top-3 right-3 z-40 rounded-lg bg-white/95 px-3 py-2 text-sm font-bold shadow"
       >
         <span className="text-base">가</span> <span className="text-xs">나</span>
       </button>
       <KakaoMap />
+      <PWAInstallPrompt />
     </div>
   )
 }
