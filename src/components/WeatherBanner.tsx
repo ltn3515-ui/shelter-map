@@ -7,24 +7,40 @@ import {
   WEATHER_ALERT_LABEL,
 } from '../lib/weather'
 
-// Seoul City Hall
-const SEOUL_CITY_HALL = { lat: 37.5665, lng: 126.978 }
-
 type BannerState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'ready'; temperatureC: number; feelsLikeC: number; alertLabel: string | null }
 
 function getLocation(): Promise<{ lat: number; lng: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      resolve(SEOUL_CITY_HALL)
+      reject(new Error('이 브라우저는 위치 정보를 지원하지 않습니다.'))
       return
     }
+
     navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
-      () => resolve(SEOUL_CITY_HALL),
-      { enableHighAccuracy: true, timeout: 10000 },
+      (position) =>
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }),
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(new Error('현재 지역 날씨를 보려면 위치 권한을 허용해주세요.'))
+          return
+        }
+        if (error.code === error.TIMEOUT) {
+          reject(new Error('현재 위치 확인 시간이 초과되었습니다.'))
+          return
+        }
+        reject(new Error('현재 위치를 확인할 수 없어 날씨를 표시하지 않습니다.'))
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
+      },
     )
   })
 }
