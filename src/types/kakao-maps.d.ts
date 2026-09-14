@@ -37,11 +37,13 @@ declare namespace kakao.maps {
     map?: Map
     title?: string
     image?: MarkerImage
+    zIndex?: number
   }
 
   class Marker {
     constructor(options: MarkerOptions)
     setMap(map: Map | null): void
+    setPosition(position: LatLng): void
   }
 
   interface InfoWindowOptions {
