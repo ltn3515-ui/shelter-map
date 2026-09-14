@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import KakaoMap from './components/KakaoMap'
+import OfflineNotice from './components/OfflineNotice'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 import WeatherBanner from './components/WeatherBanner'
 
@@ -28,6 +29,7 @@ function App() {
   return (
     <div className="relative h-screen w-screen overflow-hidden">
       <WeatherBanner />
+      <OfflineNotice />
       <button
         type="button"
         onClick={() => setLargeText((prev) => !prev)}
